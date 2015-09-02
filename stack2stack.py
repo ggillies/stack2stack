@@ -33,10 +33,30 @@ def migrate_tenants():
             print 'Tenant %s found, ignoring' % i.name
         except api_exceptions.NotFound:
             print 'Tenant %s not found, adding' % i.name
-            new_cloud_keystone_client.tenants.create(tenant_name=i.name, description=i.description, enabled=True)
+            new_cloud_keystone_client.tenants.create(tenant_name=i.name, description=i.description, enabled=i.enabled)
+
+def migrate_users():
+    old_cloud_keystone_client = keystone_client.Client(
+                username=old_cloud_username, password=old_cloud_password, tenant_name=old_cloud_project_id,
+                auth_url=old_cloud_auth_url, region_name=old_cloud_region_name, insecure=True)
+
+    new_cloud_keystone_client = keystone_client.Client(
+                username=new_cloud_username, password=new_cloud_password, tenant_name=new_cloud_project_id,
+                auth_url=new_cloud_auth_url, region_name=new_cloud_region_name, insecure=True)
+
+    users = old_cloud_keystone_client.users.list()
+    for i in users:
+        print 'Found user with name %s, email is %s' % (i.name, i.email)
+        try:
+            new_cloud_keystone_client.users.find(name=i.name, email=i.email)
+            print 'User %s found, ignoring' % i.name
+        except api_exceptions.NotFound:
+            print 'User %s not found, adding' % i.name
+            new_cloud_keystone_client.users.create(name=i.name, email=i.email, enabled=i.enabled)
 
 def main():
     migrate_tenants()
+    migrate_users()
 
 if __name__ == "__main__":
     main()
