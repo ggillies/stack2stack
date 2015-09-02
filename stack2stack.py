@@ -3,7 +3,7 @@
 from keystoneclient.apiclient import exceptions as api_exceptions
 import keystoneclient.openstack.common.apiclient.exceptions
 from keystoneclient.v2_0 import client as keystone_client
-import neutronclient.common.exceptions
+from glanceclient import client as glance_client
 
 old_cloud_username='admin'
 old_cloud_password='admin'
@@ -46,6 +46,8 @@ def migrate_users():
 
     users = old_cloud_keystone_client.users.list()
     for i in users:
+        if i.name in ('admin', 'cinder', 'glance', 'keystone', 'neutron', 'nova', 'heat', 'swift', 'ceilometer'):
+            continue
         print 'Found user with name %s, email is %s' % (i.name, i.email)
         try:
             new_cloud_keystone_client.users.find(name=i.name, email=i.email)
@@ -54,9 +56,43 @@ def migrate_users():
             print 'User %s not found, adding' % i.name
             new_cloud_keystone_client.users.create(name=i.name, email=i.email, enabled=i.enabled)
 
+def migrate_tenant_membership():
+    old_cloud_keystone_client = keystone_client.Client(
+                username=old_cloud_username, password=old_cloud_password, tenant_name=old_cloud_project_id,
+                auth_url=old_cloud_auth_url, region_name=old_cloud_region_name, insecure=True)
+
+    new_cloud_keystone_client = keystone_client.Client(
+                username=new_cloud_username, password=new_cloud_password, tenant_name=new_cloud_project_id,
+                auth_url=new_cloud_auth_url, region_name=new_cloud_region_name, insecure=True)
+    tenants = old_cloud_keystone_client.tenants.list()
+    for i in tenants:
+        if i.name in ('services', 'service', 'admin'):
+            continue
+        print 'Found tenant with name %s, members are \'%s\'' % (i.name, i.list_users())
+        new_tenant = new_cloud_keystone_client.tenants.find(name=i.name, description=i.description)
+        member_role = new_cloud_keystone_client.roles.find(name='_member_')
+        for j in i.list_users():
+            user = new_cloud_keystone_client.users.find(name=j.name, email=j.email)
+            try:
+                new_tenant.add_user(user, member_role)
+            except api_exceptions.Conflict:
+                continue
+
+def migrate_images():
+    old_cloud_keystone_client = keystone_client.Client(
+                    username=old_cloud_username, password=old_cloud_password, tenant_name=old_cloud_project_id,
+                    auth_url=old_cloud_auth_url, region_name=old_cloud_region_name, insecure=True)
+    endpoint = old_cloud_keystone_client.endpoints.find(service_id=old_cloud_keystone_client.services.find(name='glance').id)
+    old_cloud_glance_client = glance_client.Client('2', token=old_cloud_keystone_client.auth_token, endpoint=endpoint.publicurl)
+    images = old_cloud_glance_client.images.list()
+    for i in images:
+        print 'Found image %s' % i.name
+
 def main():
     migrate_tenants()
     migrate_users()
+    migrate_tenant_membership()
+    migrate_images()
 
 if __name__ == "__main__":
     main()
