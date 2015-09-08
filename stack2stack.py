@@ -4,6 +4,7 @@ from keystoneclient.apiclient import exceptions as api_exceptions
 import keystoneclient.openstack.common.apiclient.exceptions
 from keystoneclient.v2_0 import client as keystone_client
 from glanceclient import client as glance_client
+from os import path
 
 old_cloud_username='admin'
 old_cloud_password='admin'
@@ -82,11 +83,31 @@ def migrate_images():
     old_cloud_keystone_client = keystone_client.Client(
                     username=old_cloud_username, password=old_cloud_password, tenant_name=old_cloud_project_id,
                     auth_url=old_cloud_auth_url, region_name=old_cloud_region_name, insecure=True)
-    endpoint = old_cloud_keystone_client.endpoints.find(service_id=old_cloud_keystone_client.services.find(name='glance').id)
-    old_cloud_glance_client = glance_client.Client('2', token=old_cloud_keystone_client.auth_token, endpoint=endpoint.publicurl)
+    new_cloud_keystone_client = keystone_client.Client(
+                username=new_cloud_username, password=new_cloud_password, tenant_name=new_cloud_project_id,
+                auth_url=new_cloud_auth_url, region_name=new_cloud_region_name, insecure=True)
+    old_endpoint = old_cloud_keystone_client.endpoints.find(service_id=old_cloud_keystone_client.services.find(name='glance').id)
+    new_endpoint = new_cloud_keystone_client.endpoints.find(service_id=new_cloud_keystone_client.services.find(name='glance').id)
+    old_cloud_glance_client = glance_client.Client('1', token=old_cloud_keystone_client.auth_token, endpoint=old_endpoint.publicurl)
+    new_cloud_glance_client = glance_client.Client('1', token=new_cloud_keystone_client.auth_token, endpoint=new_endpoint.publicurl)
     images = old_cloud_glance_client.images.list()
     for i in images:
         print 'Found image %s' % i.name
+        if not hasattr(i, 'image_type'):
+            is_public = i.is_public
+            if not is_public:
+                old_cloud_glance_client.images.update(i.id, is_public=True)
+            if not path.isfile(i.name):
+                with open(i.name, 'wb') as f:
+                    for chunk in old_cloud_glance_client.images.data(i.id):
+                        f.write(chunk)
+                f.close()
+            if not is_public:
+                old_cloud_glance_client.images.update(i.id, is_public=False)
+
+            new_owner_id = new_cloud_keystone_client.tenants.find(name=old_cloud_keystone_client.tenants.find(id=i.owner).name, description=old_cloud_keystone_client.tenants.find(id=i.owner).description).id
+            j = new_cloud_glance_client.images.create(name=i.name, is_public=is_public, disk_format = i.disk_format, container_format = i.container_format, owner = new_owner_id)
+            j.update(data=open(j.name, 'rb'))
 
 def main():
     migrate_tenants()
