@@ -98,7 +98,7 @@ def migrate_images():
             try:
               new_cloud_glance_client.images.find(name=i.name)
               print 'Image %s found, ignoring' % i.name
-            except api_exceptions.NotFound:
+            except glance_exceptions.NotFound:
                 is_public = i.is_public
                 if not is_public:
                     old_cloud_glance_client.images.update(i.id, is_public=True)
