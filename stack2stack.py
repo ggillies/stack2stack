@@ -6,6 +6,7 @@ import glanceclient.openstack.common.apiclient.exceptions as glance_exceptions
 from keystoneclient.v2_0 import client as keystone_client
 from glanceclient import client as glance_client
 from os import path
+from os import remove
 
 old_cloud_username='admin'
 old_cloud_password='admin'
@@ -113,7 +114,8 @@ def migrate_images():
                 new_owner_id = new_cloud_keystone_client.tenants.find(name=old_cloud_keystone_client.tenants.find(id=i.owner).name, description=old_cloud_keystone_client.tenants.find(id=i.owner).description).id
                 j = new_cloud_glance_client.images.create(name=i.name, is_public=is_public, disk_format = i.disk_format, container_format = i.container_format, owner = new_owner_id)
                 j.update(data=open(j.name, 'rb'))
-                os.remove(i.name)
+                remove(i.name)
+
 def main():
     migrate_tenants()
     migrate_users()
