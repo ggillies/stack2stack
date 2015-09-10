@@ -115,7 +115,7 @@ def migrate_images():
                     old_cloud_glance_client.images.update(i.id, is_public=False)
 
                 new_owner_id = new_cloud_keystone_client.tenants.find(name=old_cloud_keystone_client.tenants.find(id=i.owner).name, description=old_cloud_keystone_client.tenants.find(id=i.owner).description).id
-                j = new_cloud_glance_client.images.create(name=i.name, is_public=is_public, disk_format = i.disk_format, container_format = i.container_format, owner = new_owner_id)
+                j = new_cloud_glance_client.images.create(id=i.id, name=i.name, is_public=is_public, disk_format = i.disk_format, container_format = i.container_format, owner = new_owner_id)
                 j.update(data=open(j.name, 'rb'))
                 remove(i.name)
 
