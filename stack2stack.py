@@ -10,6 +10,8 @@ from os import remove
 from neutronclient.v2_0 import client as neutron_client
 from novaclient import client as nova_client
 import neutronclient.common.exceptions as neutron_exceptions
+import random
+import string
 
 old_cloud_username='admin'
 old_cloud_password='admin'
@@ -59,8 +61,9 @@ def migrate_users():
             new_cloud_keystone_client.users.find(name=i.name, email=i.email)
             print 'User %s found, ignoring' % i.name
         except api_exceptions.NotFound:
-            print 'User %s not found, adding' % i.name
-            new_cloud_keystone_client.users.create(name=i.name, email=i.email, enabled=i.enabled)
+            new_password = ''.join(random.choice(string.letters) for i in range(20))
+            print 'User %s not found, adding with email: %s and password: %s' % (i.name, i.email, new_password)
+            new_cloud_keystone_client.users.create(name=i.name, email=i.email, enabled=i.enabled, password=new_password)
 
 def migrate_tenant_membership():
     old_cloud_keystone_client = keystone_client.Client(
