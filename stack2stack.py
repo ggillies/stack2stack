@@ -7,6 +7,9 @@ from keystoneclient.v2_0 import client as keystone_client
 from glanceclient import client as glance_client
 from os import path
 from os import remove
+from neutronclient.v2_0 import client as neutron_client
+from novaclient import client as nova_client
+import neutronclient.common.exceptions as neutron_exceptions
 
 old_cloud_username='admin'
 old_cloud_password='admin'
@@ -116,11 +119,45 @@ def migrate_images():
                 j.update(data=open(j.name, 'rb'))
                 remove(i.name)
 
+def migrate_networks_nova_network_to_neutron():
+    old_cloud_keystone_client = keystone_client.Client(
+                    username=old_cloud_username, password=old_cloud_password, tenant_name=old_cloud_project_id,
+                    auth_url=old_cloud_auth_url, region_name=old_cloud_region_name, insecure=True)
+    new_cloud_keystone_client = keystone_client.Client(
+                username=new_cloud_username, password=new_cloud_password, tenant_name=new_cloud_project_id,
+                auth_url=new_cloud_auth_url, region_name=new_cloud_region_name, insecure=True)
+    old_cloud_nova_client = nova_client.Client(2, old_cloud_username, old_cloud_password, old_cloud_project_id, old_cloud_auth_url)
+    new_cloud_neutron_client = neutron_client.Client(username=new_cloud_username, password=new_cloud_password,
+                          tenant_name=new_cloud_project_id, auth_url=new_cloud_auth_url)
+
+    networks = old_cloud_nova_client.networks.list()
+    for i in networks:
+        try:
+            old_cloud_tenant = old_cloud_keystone_client.tenants.find(id=i.project_id)
+        except api_exceptions.NotFound:
+            print 'Bad or missing tenant in old cloud %s, skipping this orphaned network' % i.project_id
+            continue
+        print 'Found network %s owned by %s' % (i.label, old_cloud_tenant.name)
+        try:
+            new_cloud_tenant = new_cloud_keystone_client.tenants.find(name=old_cloud_tenant.name, description=old_cloud_tenant.description)
+        except api_exceptions.NotFound:
+            print 'Tenant %s not found in new cloud, confirm tenant migration was done correctly' % old_cloud_tenant.name
+            continue
+        new_cloud_networks = new_cloud_neutron_client.list_networks(name=i.label, tenant_id=new_cloud_tenant.id)
+        if len(new_cloud_networks['networks']) == 0:
+            print('Creating network %s in tenant %s' % (i.label, new_cloud_tenant.name))
+            new_cloud_network = new_cloud_neutron_client.create_network({'network':{'name':i.label, 'tenant_id':new_cloud_tenant.id}})
+            new_cloud_subnet = new_cloud_neutron_client.create_subnet({'subnet':{'name':i.label, 'network_id':new_cloud_network['network']['id'],
+                                'tenant_id':new_cloud_tenant.id,'ip_version':4, 'cidr':i.cidr, 'enable_dhcp':True}})
+        else:
+            print('Network %s already exists in new cloud, ignoring' % i.label)
+
 def main():
     migrate_tenants()
     migrate_users()
     migrate_tenant_membership()
     migrate_images()
+    migrate_networks_nova_network_to_neutron()
 
 if __name__ == "__main__":
     main()
