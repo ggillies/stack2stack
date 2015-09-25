@@ -35,6 +35,8 @@ def migrate_tenants():
                 auth_url=new_cloud_auth_url, region_name=new_cloud_region_name, insecure=True)
     tenants = old_cloud_keystone_client.tenants.list()
     for i in tenants:
+        if i.name in ('admin'):
+            continue
         print 'Found tenant with name %s, description is \'%s\'' % (i.name, i.description)
         try:
             new_cloud_keystone_client.tenants.find(name=i.name, description=i.description)
@@ -64,6 +66,27 @@ def migrate_users():
             new_password = ''.join(random.choice(string.letters) for i in range(20))
             print 'User %s not found, adding with email: %s and password: %s' % (i.name, i.email, new_password)
             new_cloud_keystone_client.users.create(name=i.name, email=i.email, enabled=i.enabled, password=new_password)
+
+def migrate_roles():
+    old_cloud_keystone_client = keystone_client.Client(
+                username=old_cloud_username, password=old_cloud_password, tenant_name=old_cloud_project_id,
+                auth_url=old_cloud_auth_url, region_name=old_cloud_region_name, insecure=True)
+
+    new_cloud_keystone_client = keystone_client.Client(
+                username=new_cloud_username, password=new_cloud_password, tenant_name=new_cloud_project_id,
+                auth_url=new_cloud_auth_url, region_name=new_cloud_region_name, insecure=True)
+
+    roles = old_cloud_keystone_client.roles.list()
+    for i in roles:
+        if i.name in ('heat_stack_user', 'ResellerAdmin', 'SwiftOperator', '_member_', 'admin'):
+            continue
+        print "found role: %s" % i.name
+        try:
+            new_cloud_keystone_client.roles.find(name=i.name)
+            print "role %s found in target, ignoring" % i.name
+        except api_exceptions.NotFound:
+            print "role %s not found in target, creating" % i.name
+            new_cloud_keystone_client.roles.create(name=i.name)
 
 def migrate_tenant_membership():
     old_cloud_keystone_client = keystone_client.Client(
@@ -158,6 +181,7 @@ def migrate_networks_nova_network_to_neutron():
 def main():
     migrate_tenants()
     migrate_users()
+    migrate_roles()
     migrate_tenant_membership()
     migrate_images()
     migrate_networks_nova_network_to_neutron()
