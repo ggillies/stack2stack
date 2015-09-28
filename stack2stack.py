@@ -5,6 +5,7 @@ import keystoneclient.openstack.common.apiclient.exceptions
 import glanceclient.openstack.common.apiclient.exceptions as glance_exceptions
 from keystoneclient.v2_0 import client as keystone_client
 from glanceclient import client as glance_client
+import glanceclient.exc
 from os import path
 from os import remove
 from neutronclient.v2_0 import client as neutron_client
@@ -43,7 +44,8 @@ def migrate_tenants():
             print 'Tenant %s found, ignoring' % i.name
         except api_exceptions.NotFound:
             print 'Tenant %s not found, adding' % i.name
-            new_cloud_keystone_client.tenants.create(tenant_name=i.name, description=i.description, enabled=i.enabled)
+            if i.name !="alt_demo": # migration of alt_demo tennant throws errors if tempest has been run on new-cloud so skipping it here
+                new_cloud_keystone_client.tenants.create(tenant_name=i.name, description=i.description, enabled=i.enabled)
 
 def migrate_users():
     old_cloud_keystone_client = keystone_client.Client(
@@ -56,16 +58,17 @@ def migrate_users():
 
     users = old_cloud_keystone_client.users.list()
     for i in users:
-        if i.name in ('admin', 'cinder', 'glance', 'keystone', 'neutron', 'nova', 'heat', 'swift', 'ceilometer'):
+        if i.name in ('admin', 'alt_demo', 'cinder', 'glance', 'keystone', 'neutron', 'nova', 'heat', 'swift', 'ceilometer'):
             continue
         print 'Found user with name %s, email is %s' % (i.name, i.email)
         try:
             new_cloud_keystone_client.users.find(name=i.name, email=i.email)
             print 'User %s found, ignoring' % i.name
         except api_exceptions.NotFound:
-            new_password = ''.join(random.choice(string.letters) for i in range(20))
-            print 'User %s not found, adding with email: %s and password: %s' % (i.name, i.email, new_password)
-            new_cloud_keystone_client.users.create(name=i.name, email=i.email, enabled=i.enabled, password=new_password)
+            if i.name !="demo": # migration of demo user throws errors if tempest has been run on new-cloud so skipping it here
+                new_password = ''.join(random.choice(string.letters) for i in range(20))
+                print 'User %s not found, adding with email: %s and password: %s' % (i.name, i.email, new_password)
+                new_cloud_keystone_client.users.create(name=i.name, email=i.email, enabled=i.enabled, password=new_password)
 
 def migrate_roles():
     old_cloud_keystone_client = keystone_client.Client(
@@ -123,26 +126,69 @@ def migrate_images():
     new_cloud_glance_client = glance_client.Client('1', token=new_cloud_keystone_client.auth_token, endpoint=new_endpoint.publicurl)
     images = old_cloud_glance_client.images.list()
     for i in images:
-        print 'Found image %s' % i.name
+        print ''
+        print 'Old Cloud: Found image           - %s' % i.name
+        print '           Image ID              - %s' % i.id
+        image_type = 'image'
+        if hasattr(i, 'image_type'):
+            image_type = i.properties['image_type']
+        print '           Image Type            - %s' % image_type
+        print '           Image Status          - %s' % i.status
+        print '           Image Container       - %s' % i.container_format
+        print '           Image Format          - %s' % i.disk_format
+        print '           Image Checksum        - %s' % i.checksum
+        image_size = (i.size/1024)/1024
+        print '           Image Size            - %sMb' % image_size
+        print ''
         if not hasattr(i, 'image_type'):
             try:
               new_cloud_glance_client.images.find(name=i.name)
-              print 'Image %s found, ignoring' % i.name
+              print 'Info: New Cloud: Image - %s already exists so ignoring' % i.name
+              print ''
+              print '-------------------------------------------------------------------------------------------'
             except glance_exceptions.NotFound:
                 is_public = i.is_public
                 if not is_public:
                     old_cloud_glance_client.images.update(i.id, is_public=True)
                 if not path.isfile(i.name):
-                    with open(i.name, 'wb') as f:
-                        for chunk in old_cloud_glance_client.images.data(i.id):
-                            f.write(chunk)
-                    f.close()
+                    print 'New Cloud: image - %s does not yet exist' % i.name
+                    print ''
+                    print 'Local Filesytem: Downloading temp image to local disk'
+                    print '                 Preparing to transfer %s to New Cloud' % i.name
+                    print ''
+                    try:
+                        with open(i.name, 'wb') as f:
+                            for chunk in old_cloud_glance_client.images.data(i.id):
+                                f.write(chunk)
+                        f.close()
+                    except glanceclient.exc.HTTPInternalServerError:
+                        print ''
+                        print 'Error: There was a problem uploading this Image - %s - ID: %s - This was caused by an HTTPInternalServerError at this time. You may want to investigate further' % (i.name, i.id)
+                        print ''
+                        continue
                 if not is_public:
                     old_cloud_glance_client.images.update(i.id, is_public=False)
 
                 new_owner_id = new_cloud_keystone_client.tenants.find(name=old_cloud_keystone_client.tenants.find(id=i.owner).name, description=old_cloud_keystone_client.tenants.find(id=i.owner).description).id
-                j = new_cloud_glance_client.images.create(id=i.id, name=i.name, is_public=is_public, disk_format = i.disk_format, container_format = i.container_format, owner = new_owner_id)
+                try:
+                    j = new_cloud_glance_client.images.create(id=i.id, name=i.name, is_public=is_public, disk_format = i.disk_format, container_format = i.container_format, owner = new_owner_id)
+                    except:
+                    print 'Error: Image - %s -ID: %s - conflicts with existing ID. You may want to investigate further' % (i.name, i.id)
+                    print 'Error: This ID conflict usually means that the ID previously existed on the new cloud and has been deleted.'
+                    print 'Info: You may need to remove from the mysql glance:'
+                    print 'Info: You can try the following:'
+                    print 'Info: mysql glance'
+                    print "Info: delete from image_locations where image_id='%s';" % i.id
+                    print "Info: delete from image_properties where image_id='%s';" % i.id
+                    print "Info: delete from images where id='%s';" % i.id
+                    continue
+                print 'New Cloud: Creating and uploading image - %s' % j.name
+                print ''
                 j.update(data=open(j.name, 'rb'))
+                print 'Local Filesytem: Removing temp image - %s' % i.name
+                print ''
+                print '============================= Transfer and cleanup complete ==============================='
+                print ''
                 remove(i.name)
 
 def migrate_networks_nova_network_to_neutron():
