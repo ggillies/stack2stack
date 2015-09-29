@@ -104,7 +104,13 @@ def migrate_tenant_membership():
         if i.name in ('services', 'service', 'admin'):
             continue
         print 'Found tenant with name %s, members are \'%s\'' % (i.name, i.list_users())
-        new_tenant = new_cloud_keystone_client.tenants.find(name=i.name, description=i.description)
+        try:
+            new_tenant = new_cloud_keystone_client.tenants.find(name=i.name, description=i.description)
+        except keystoneclient.openstack.common.apiclient.exceptions.NotFound:
+            print '-------------------------------------------------------------------------------------------'
+            print 'Error: Tenant %s does not exist on new-cloud' % i.name
+            print '-------------------------------------------------------------------------------------------'
+            continue
         for j in i.list_users():
             new_user = new_cloud_keystone_client.users.find(name=j.name, email=j.email)
             old_roles = old_cloud_keystone_client.users.find(name=j.name, email=j.email).list_roles(i)
