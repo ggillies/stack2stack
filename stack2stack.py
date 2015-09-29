@@ -105,13 +105,16 @@ def migrate_tenant_membership():
             continue
         print 'Found tenant with name %s, members are \'%s\'' % (i.name, i.list_users())
         new_tenant = new_cloud_keystone_client.tenants.find(name=i.name, description=i.description)
-        member_role = new_cloud_keystone_client.roles.find(name='_member_')
         for j in i.list_users():
-            user = new_cloud_keystone_client.users.find(name=j.name, email=j.email)
-            try:
-                new_tenant.add_user(user, member_role)
-            except api_exceptions.Conflict:
-                continue
+            new_user = new_cloud_keystone_client.users.find(name=j.name, email=j.email)
+            old_roles = old_cloud_keystone_client.users.find(name=j.name, email=j.email).list_roles(i)
+            for k in old_roles:
+                new_role = new_cloud_keystone_client.roles.find(name=k.name)
+                try:
+                    new_tenant.add_user(new_user, new_role)
+                except api_exceptions.Conflict:
+                    print("role %s for user %s already assigned, ignoring") % (j.name, k.name)
+                    continue
 
 def migrate_images():
     old_cloud_keystone_client = keystone_client.Client(

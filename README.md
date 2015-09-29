@@ -9,7 +9,7 @@ APIs themselves. Currently the script migrates
 * Keystone Users
 * Keystone Tenants
 * Keystone roles
-* Keystone Tenant Memberships (defaulting all users to _member_ role)
+* Keystone Tenant Memberships
 * Glance Images
 * Networks from nova networking to neutron
 
@@ -32,7 +32,6 @@ Limitations
 
 Currently stack2stack has the following limitations, some of which are slowly being addressed
 
-* User to tenant full role mapping is not done
 * As the api offers no way to expose the underlying cinder volumes, cinder
   volumes are not migrated
 * As the APIs do not expose users passwords, currently each user account
