@@ -21,7 +21,7 @@ two openstack clouds you wish to use in the migration (old_cloud_* are the
 source cloud, new_cloud_* are the target cloud). Then simply run
 
 ````
-python stack2stack.py | tee stack2stack.log
+python -u stack2stack.py | tee stack2stack.log
 ````
 
 This will run the migration and capture the output to stdout and the log file
