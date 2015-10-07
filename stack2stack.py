@@ -101,7 +101,7 @@ def migrate_tenant_membership():
                 auth_url=new_cloud_auth_url, region_name=new_cloud_region_name, insecure=True)
     tenants = old_cloud_keystone_client.tenants.list()
     for i in tenants:
-        if i.name in ('services', 'service', 'admin'):
+        if i.name in ('services', 'service', 'admin', 'alt_demo'):
             continue
         print 'Found tenant with name %s, members are \'%s\'' % (i.name, i.list_users())
         try:
@@ -233,6 +233,33 @@ def migrate_networks_nova_network_to_neutron():
         else:
             print('Network %s already exists in new cloud, ignoring' % i.label)
 
+def migrate_security_groups_nova_network_to_neutron():
+    old_cloud_keystone_client = keystone_client.Client(
+                    username=old_cloud_username, password=old_cloud_password, tenant_name=old_cloud_project_id,
+                    auth_url=old_cloud_auth_url, region_name=old_cloud_region_name, insecure=True)
+    new_cloud_keystone_client = keystone_client.Client(
+                username=new_cloud_username, password=new_cloud_password, tenant_name=new_cloud_project_id,
+                auth_url=new_cloud_auth_url, region_name=new_cloud_region_name, insecure=True)
+    old_cloud_nova_client = nova_client.Client(2, old_cloud_username, old_cloud_password, old_cloud_project_id, old_cloud_auth_url)
+    new_cloud_neutron_client = neutron_client.Client(username=new_cloud_username, password=new_cloud_password,
+                          tenant_name=new_cloud_project_id, auth_url=new_cloud_auth_url)
+    old_cloud_security_groups = old_cloud_nova_client.security_groups.list(search_opts={'all_tenants': 1})
+    for i in old_cloud_security_groups:
+        print("Found security group %s with description '%s' in tenant id %s") % (i.name, i.description, i.tenant_id)
+        try:
+            old_cloud_tenant = old_cloud_keystone_client.tenants.find(id=i.tenant_id)
+            new_cloud_tenant = new_cloud_keystone_client.tenants.find(name=old_cloud_tenant.name)
+        except api_exceptions.NotFound:
+            print 'Tenant with id %s not found in old or new cloud, assuming bad data and ignoring this security group' % i.tenant_id
+            continue
+        new_secgroup = new_cloud_neutron_client.list_security_groups(name=i.name, tenant_id=i.tenant_id)
+        if new_secgroup['security_groups'] == []:
+            print('Security group %s for tenant %s missing, creating now') % (i.name, new_cloud_tenant.name)
+            newly_created_secgroup = new_cloud_neutron_client.create_security_group({'security_group':{'name':i.name, 'description':i.description, 'tenant_id':i.tenant_id}})
+            for j in i.rules:
+                print 'Found rule with ip_protocol %s and ports %s to %s for iprange %s, creating' % (j['ip_protocol'], j['from_port'], j['to_port'], j['ip_range']['cidr'])
+                new_cloud_neutron_client.create_security_group_rule({'security_group_rule':{'direction':'ingress', 'protocol':j['ip_protocol'], 'port_range_min':0 if j['from_port'] == -1 else j['from_port'], 'port_range_max':0 if j['to_port'] == -1 else j['to_port'], 'remote_ip_prefix':j['ip_range']['cidr'], 'security_group_id':newly_created_secgroup['security_group']['id']}})
+
 def main():
     migrate_tenants()
     migrate_users()
@@ -240,6 +267,7 @@ def main():
     migrate_tenant_membership()
     migrate_images()
     migrate_networks_nova_network_to_neutron()
+    migrate_security_groups_nova_network_to_neutron()
 
 if __name__ == "__main__":
     main()

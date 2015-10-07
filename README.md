@@ -12,6 +12,7 @@ APIs themselves. Currently the script migrates
 * Keystone Tenant Memberships
 * Glance Images
 * Networks from nova networking to neutron
+* Security groups from nova networking to neutron
 
 How to use
 ==========
