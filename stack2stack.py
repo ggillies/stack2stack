@@ -148,6 +148,7 @@ def migrate_images():
         print '           Image Checksum        - %s' % i.checksum
         image_size = (i.size/1024)/1024
         print '           Image Size            - %sMb' % image_size
+        print '           Image Properties      - %s' % i.properties
         print ''
         if not hasattr(i, 'image_type'):
             try:
@@ -180,7 +181,7 @@ def migrate_images():
 
                 new_owner_id = new_cloud_keystone_client.tenants.find(name=old_cloud_keystone_client.tenants.find(id=i.owner).name, description=old_cloud_keystone_client.tenants.find(id=i.owner).description).id
                 try:
-                    j = new_cloud_glance_client.images.create(id=i.id, name=i.name, is_public=is_public, disk_format = i.disk_format, container_format = i.container_format, owner = new_owner_id)
+                    j = new_cloud_glance_client.images.create(id=i.id, name=i.name, is_public=is_public, disk_format = i.disk_format, container_format = i.container_format, owner = new_owner_id, properties=i.properties)
                 except glanceclient.ext.HTTPConflict:
                     print 'Error: Image - %s -ID: %s - conflicts with existing ID. You may want to investigate further' % (i.name, i.id)
                     print 'Error: This ID conflict usually means that the ID previously existed on the new cloud and has been deleted.'
