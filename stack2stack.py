@@ -256,10 +256,18 @@ def migrate_security_groups_nova_network_to_neutron():
         new_secgroup = new_cloud_neutron_client.list_security_groups(name=i.name, tenant_id=new_cloud_tenant.id)
         if new_secgroup['security_groups'] == []:
             print('Security group %s for tenant %s missing, creating now') % (i.name, new_cloud_tenant.name)
-            newly_created_secgroup = new_cloud_neutron_client.create_security_group({'security_group':{'name':i.name, 'description':i.description, 'tenant_id':new_cloud_tenant.id}})
-            for j in i.rules:
-                print 'Found rule with ip_protocol %s and ports %s to %s for iprange %s, creating' % (j['ip_protocol'], j['from_port'], j['to_port'], j['ip_range']['cidr'])
-                new_cloud_neutron_client.create_security_group_rule({'security_group_rule':{'direction':'ingress', 'protocol':j['ip_protocol'], 'port_range_min':0 if j['from_port'] == -1 else j['from_port'], 'port_range_max':0 if j['to_port'] == -1 else j['to_port'], 'remote_ip_prefix':j['ip_range']['cidr'], 'security_group_id':newly_created_secgroup['security_group']['id']}})
+            newly_created_secgroup = new_cloud_neutron_client.create_security_group({'security_group':{'name':i.name, 'description':i.description, 'tenant_id':new_cloud_tenant.id}})['security_group']
+        else:
+            newly_created_secgroup = new_cloud_neutron_client.list_security_groups(name=i.name, tenant_id=new_cloud_tenant.id)['security_groups'][0]
+        for j in i.rules:
+            if j['group'] != {}:
+                print 'PLEASE MIGRATE RULES IN SECURITY GROUP %s UNDER TENANT %s MANUALLY AS THEY ARE NESTED AND CAN\'T BE MIGRATED AUTOMATICALLY!' % (i.name, new_cloud_tenant.name)
+                continue
+            print 'Found rule with ip_protocol %s and ports %s to %s for iprange %s, creating' % (j['ip_protocol'], j['from_port'], j['to_port'], j['ip_range']['cidr'])
+            try:
+                new_cloud_neutron_client.create_security_group_rule({'security_group_rule':{'direction':'ingress', 'protocol':j['ip_protocol'], 'port_range_min':0 if j['from_port'] == -1 else j['from_port'], 'port_range_max':0 if j['to_port'] == -1 else j['to_port'], 'remote_ip_prefix':j['ip_range']['cidr'], 'security_group_id':newly_created_secgroup['id']}})
+            except neutron_exceptions.Conflict:
+                print 'Rule exists, ignoring'
 
 def main():
     migrate_tenants()
